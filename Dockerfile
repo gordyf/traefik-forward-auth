@@ -1,4 +1,4 @@
-FROM golang:1.14-alpine as builder
+FROM golang:1.19-alpine as builder
 
 # Setup
 RUN mkdir -p /go/src/github.com/mesosphere/traefik-forward-auth
