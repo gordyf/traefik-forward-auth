@@ -94,6 +94,7 @@ func (s *Server) AuthHandler(w http.ResponseWriter, r *http.Request) {
 	// Get auth cookie
 	c, err := r.Cookie(s.config.CookieName)
 	if err != nil {
+		logger.Info("missing auth cookie")
 		s.notAuthenticated(logger, w, r)
 		return
 	}
