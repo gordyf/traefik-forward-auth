@@ -57,7 +57,12 @@ func (s *Server) RootHandler(w http.ResponseWriter, r *http.Request) {
 		"X-Forwarded-Host":   r.Header.Get("X-Forwarded-Host"),
 		"X-Forwarded-Prefix": r.Header.Get("X-Forwarded-Prefix"),
 		"X-Forwarded-Uri":    r.Header.Get("X-Forwarded-Uri"),
+		"Path":               r.URL.Path,
+		"Host":               r.Host,
+		"Method":             r.Method,
 	})
+
+	logger.Debug("Root request")
 
 	// Modify request
 	r.Method = r.Header.Get("X-Forwarded-Method")
@@ -89,7 +94,16 @@ func (s *Server) AllowHandler(rule string) http.HandlerFunc {
 // Finally it also performs authorization (if enabled) to ensure the logged-in subject is authorized to perform the request.
 func (s *Server) AuthHandler(w http.ResponseWriter, r *http.Request) {
 	// Logging setup
-	logger := s.logger(r, "Authenticate request")
+	logger := s.logger(r, "Authenticate request").WithFields(logrus.Fields{
+		"X-Forwarded-Method": r.Header.Get("X-Forwarded-Method"),
+		"X-Forwarded-Proto":  r.Header.Get("X-Forwarded-Proto"),
+		"X-Forwarded-Host":   r.Header.Get("X-Forwarded-Host"),
+		"X-Forwarded-Prefix": r.Header.Get("X-Forwarded-Prefix"),
+		"X-Forwarded-Uri":    r.Header.Get("X-Forwarded-Uri"),
+		"Path":               r.URL.Path,
+		"Host":               r.Host,
+		"Method":             r.Method,
+	})
 
 	// Get auth cookie
 	c, err := r.Cookie(s.config.CookieName)
