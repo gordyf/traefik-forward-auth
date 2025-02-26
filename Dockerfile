@@ -1,18 +1,9 @@
-FROM golang:1.23-alpine as builder
+FROM golang:1.24 as builder
 
-# Setup
-RUN mkdir -p /go/src/github.com/mesosphere/traefik-forward-auth
-WORKDIR /go/src/github.com/mesosphere/traefik-forward-auth
+COPY go.mod go.sum ./
+RUN go mod download
 
-# Add libraries
-RUN apk add --no-cache git
+COPY . .
+RUN go build -o ./traefik-forward-auth
 
-# Copy & build
-ADD . /go/src/github.com/mesosphere/traefik-forward-auth/
-RUN CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build -a -installsuffix nocgo -o /traefik-forward-auth github.com/mesosphere/traefik-forward-auth/cmd
-
-# Copy into scratch container
-FROM scratch
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /traefik-forward-auth ./
-ENTRYPOINT ["./traefik-forward-auth"]
+CMD ["./traefik-forward-auth"]
