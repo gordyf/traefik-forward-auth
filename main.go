@@ -8,12 +8,13 @@ import (
 
 	"github.com/gorilla/sessions"
 
-	"github.com/mesosphere/traefik-forward-auth/internal/api/storage/v1alpha1"
-	"github.com/mesosphere/traefik-forward-auth/internal/authentication"
-	"github.com/mesosphere/traefik-forward-auth/internal/configuration"
-	"github.com/mesosphere/traefik-forward-auth/internal/handlers"
-	logger "github.com/mesosphere/traefik-forward-auth/internal/log"
-	"github.com/mesosphere/traefik-forward-auth/internal/storage"
+	"github.com/gordyf/traefik-forward-auth/authentication"
+
+	"github.com/gordyf/traefik-forward-auth/api/storage/v1alpha1"
+	"github.com/gordyf/traefik-forward-auth/configuration"
+	"github.com/gordyf/traefik-forward-auth/handlers"
+	logger "github.com/gordyf/traefik-forward-auth/log"
+	"github.com/gordyf/traefik-forward-auth/storage"
 )
 
 // Main
@@ -58,6 +59,7 @@ func main() {
 
 	// Attach router to default server
 	http.HandleFunc("/", server.RootHandler)
+	http.HandleFunc(config.CallbackPath, server.AuthCallbackHandler)
 
 	// Start
 	log.Debugf("starting with options: %s", config)
