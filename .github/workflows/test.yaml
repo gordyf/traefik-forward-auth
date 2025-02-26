@@ -3,18 +3,17 @@ name: go-test
 on:
   pull_request:
     branches:
-    - master
+      - master
 
 jobs:
   build:
     name: Run Go tests
     runs-on:
-      - self-hosted
-      - medium
+      - ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-go@v5
-      with:
-        go-version-file: 'go.mod'
-    - name: Test
-      run: go test ./...
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+      - name: Test
+        run: go test ./...
