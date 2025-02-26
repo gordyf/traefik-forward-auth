@@ -2,8 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"github.com/coreos/go-oidc"
-	"github.com/mesosphere/traefik-forward-auth/internal/api/storage/v1alpha1"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -11,9 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coreos/go-oidc"
+	"github.com/mesosphere/traefik-forward-auth/internal/api/storage/v1alpha1"
+
 	"github.com/gorilla/sessions"
 	"github.com/stretchr/testify/assert"
-	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/mesosphere/traefik-forward-auth/internal/authentication"
 	"github.com/mesosphere/traefik-forward-auth/internal/configuration"
@@ -222,173 +222,6 @@ func TestServerDefaultAction(t *testing.T) {
 	assert.Equal(200, res.StatusCode, "request should be allowed with default handler")
 }
 
-func TestServerRouteHeaders(t *testing.T) {
-	assert := assert.New(t)
-	config := newTestConfig(testAuthKey1, testEncKey1)
-	config.AuthHost = "potato.example.com"
-	config.Rules = map[string]*configuration.Rule{
-		"1": {
-			Action: "allow",
-			Rule:   "Headers(`X-Test`, `test123`)",
-		},
-		"2": {
-			Action: "allow",
-			Rule:   "HeadersRegexp(`X-Test`, `test(456|789)`)",
-		},
-	}
-
-	// Should block any request
-	req := newDefaultHTTPRequest("/random")
-	req.Header.Add("X-Random", "hello")
-	res, _ := doHttpRequest(req, nil, config)
-	assert.Equal(307, res.StatusCode, "request not matching any rule should require auth")
-
-	config.AuthHost = ""
-	// Should allow matching
-	req = newDefaultHTTPRequest("/api")
-	req.Header.Add("X-Test", "test123")
-	res, _ = doHttpRequest(req, nil, config)
-	assert.Equal(200, res.StatusCode, "request matching allow rule should be allowed")
-
-	// Should allow matching
-	req = newDefaultHTTPRequest("/api")
-	req.Header.Add("X-Test", "test789")
-	res, _ = doHttpRequest(req, nil, config)
-	assert.Equal(200, res.StatusCode, "request matching allow rule should be allowed")
-}
-
-func TestServerRouteHost(t *testing.T) {
-	assert := assert.New(t)
-	config := newTestConfig(testAuthKey1, testEncKey1)
-	config.Rules = map[string]*configuration.Rule{
-		"1": {
-			Action: "allow",
-			Rule:   "Host(`api.example.com`)",
-		},
-		"2": {
-			Action: "allow",
-			Rule:   "HostRegexp(`sub{num:[0-9]}.example.com`)",
-		},
-	}
-
-	config.AuthHost = "potato.example.com"
-
-	// Should block any request
-	req := newHTTPRequest("GET", "https://example.com/", "/")
-	res, _ := doHttpRequest(req, nil, config)
-	assert.Equal(307, res.StatusCode, "request not matching any rule should require auth")
-
-	config.AuthHost = ""
-	// Should allow matching request
-	req = newHTTPRequest("GET", "https://api.example.com/", "/")
-	res, _ = doHttpRequest(req, nil, config)
-	assert.Equal(200, res.StatusCode, "request matching allow rule should be allowed")
-
-	// Should allow matching request
-	req = newHTTPRequest("GET", "https://sub8.example.com/", "/")
-	res, _ = doHttpRequest(req, nil, config)
-	assert.Equal(200, res.StatusCode, "request matching allow rule should be allowed")
-}
-
-func TestServerRouteMethod(t *testing.T) {
-	assert := assert.New(t)
-	config := newTestConfig(testAuthKey1, testEncKey1)
-	config.Rules = map[string]*configuration.Rule{
-		"1": {
-			Action: "allow",
-			Rule:   "Method(`PUT`)",
-		},
-	}
-
-	config.AuthHost = "potato.example.com"
-	// Should block any request
-	req := newHTTPRequest("GET", "https://example.com/", "/")
-	res, _ := doHttpRequest(req, nil, config)
-	assert.Equal(307, res.StatusCode, "request not matching any rule should require auth")
-
-	config.AuthHost = ""
-	// Should allow matching request
-	req = newHTTPRequest("PUT", "https://example.com/", "/")
-	res, _ = doHttpRequest(req, nil, config)
-	assert.Equal(200, res.StatusCode, "request matching allow rule should be allowed")
-}
-
-func TestServerRoutePath(t *testing.T) {
-	assert := assert.New(t)
-	config := newTestConfig(testAuthKey1, testEncKey1)
-	config.Rules = map[string]*configuration.Rule{
-		"1": {
-			Action: "allow",
-			Rule:   "Path(`/api`)",
-		},
-		"2": {
-			Action: "allow",
-			Rule:   "PathPrefix(`/private`)",
-		},
-	}
-
-	config.AuthHost = "potato.example.com"
-	// Should block any request
-	req := newDefaultHTTPRequest("/random")
-	res, _ := doHttpRequest(req, nil, config)
-	assert.Equal(307, res.StatusCode, "request not matching any rule should require auth")
-
-	config.AuthHost = ""
-	// Should allow /api request
-	req = newDefaultHTTPRequest("/api")
-	res, _ = doHttpRequest(req, nil, config)
-	assert.Equal(200, res.StatusCode, "request matching allow rule should be allowed")
-
-	// Should allow /private request
-	req = newDefaultHTTPRequest("/private")
-	res, _ = doHttpRequest(req, nil, config)
-	assert.Equal(200, res.StatusCode, "request matching allow rule should be allowed")
-
-	req = newDefaultHTTPRequest("/private/path")
-	res, _ = doHttpRequest(req, nil, config)
-	assert.Equal(200, res.StatusCode, "request matching allow rule should be allowed")
-}
-
-func TestServerRouteQuery(t *testing.T) {
-	assert := assert.New(t)
-	config := newTestConfig(testAuthKey1, testEncKey1)
-	config.Rules = map[string]*configuration.Rule{
-		"1": {
-			Action: "allow",
-			Rule:   "Query(`q=test123`)",
-		},
-	}
-
-	config.AuthHost = "potato.example.com"
-	// Should block any request
-	req := newHTTPRequest("GET", "https://example.com/", "/?q=no")
-	res, _ := doHttpRequest(req, nil, config)
-	assert.Equal(307, res.StatusCode, "request not matching any rule should require auth")
-
-	config.AuthHost = ""
-	// Should allow matching request
-	req = newHTTPRequest("GET", "https://api.example.com/", "/?q=test123")
-	res, _ = doHttpRequest(req, nil, config)
-	assert.Equal(200, res.StatusCode, "request matching allow rule should be allowed")
-}
-
-func TestAuthzDisabled(t *testing.T) {
-	assert := assert.New(t)
-	config := newTestConfig(testAuthKey1, testEncKey1)
-
-	config.EnableRBAC = true
-	config.AuthZPassThrough = []string{"/authz/passthru", "/authz/passthru/*"}
-	s := NewServer(nil, fake.NewSimpleClientset(), config)
-
-	var r *http.Request
-	r = httptest.NewRequest("get", "http://x//rbac", nil)
-	assert.Equal(s.authzIsBypassed(r), false, "/rbac should not be skipped")
-	r = httptest.NewRequest("get", "http://x/authz/passthru", nil)
-	assert.Equal(s.authzIsBypassed(r), true)
-	r = httptest.NewRequest("get", "http://x/authz/passthru/1234", nil)
-	assert.Equal(s.authzIsBypassed(r), true)
-}
-
 func TestCleanupConnection(t *testing.T) {
 	assert := assert.New(t)
 	tests := map[string]string{
@@ -439,7 +272,7 @@ func doHttpRequest(r *http.Request, c *http.Cookie, config *configuration.Config
 	if config.OIDCProvider == nil {
 		config.OIDCProvider = &oidc.Provider{}
 	}
-	s := NewServer(&fakeUserInfoStore{}, nil, config)
+	s := NewServer(&fakeUserInfoStore{}, config)
 
 	s.RootHandler(w, r)
 	res := w.Result()
@@ -467,22 +300,4 @@ func newHTTPRequest(method, dest, uri string) *http.Request {
 // newDefaultHTTPRequest creates a mocked request from Traefik for http://example.com with no HTTP method
 func newDefaultHTTPRequest(uri string) *http.Request {
 	return newHTTPRequest("", "http://example.com/", uri)
-}
-
-func qsDiff(t *testing.T, one, two url.Values) []string {
-	errs := make([]string, 0)
-	for k := range one {
-		if two.Get(k) == "" {
-			errs = append(errs, fmt.Sprintf("Key missing: %s", k))
-		}
-		if one.Get(k) != two.Get(k) {
-			errs = append(errs, fmt.Sprintf("Value different for %s: expected: '%s' got: '%s'", k, one.Get(k), two.Get(k)))
-		}
-	}
-	for k := range two {
-		if one.Get(k) == "" {
-			errs = append(errs, fmt.Sprintf("Extra key: %s", k))
-		}
-	}
-	return errs
 }

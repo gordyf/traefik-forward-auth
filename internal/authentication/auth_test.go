@@ -2,11 +2,12 @@ package authentication
 
 import (
 	"fmt"
-	"github.com/mesosphere/traefik-forward-auth/internal/configuration"
-	"github.com/mesosphere/traefik-forward-auth/internal/util"
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/mesosphere/traefik-forward-auth/internal/configuration"
+	"github.com/mesosphere/traefik-forward-auth/internal/util"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -140,11 +141,9 @@ func TestAuthMakeCookie(t *testing.T) {
 	assert.WithinDuration(expires, c.Expires, 10*time.Second)
 
 	config.CookieName = "testname"
-	config.InsecureCookie = true
 	c, err = a.MakeIDCookie(r, "test@example.com", "")
 	assert.Nil(err)
 	assert.Equal("testname", c.Name)
-	assert.False(c.Secure)
 }
 
 func TestAuthMakeCSRFCookie(t *testing.T) {

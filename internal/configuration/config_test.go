@@ -24,7 +24,6 @@ func TestConfigDefaults(t *testing.T) {
 
 	assert.Equal("", c.AuthHost)
 	assert.Len(c.CookieDomains, 0)
-	assert.False(c.InsecureCookie)
 	assert.Equal("_forward_auth", c.CookieName)
 	assert.Equal("_forward_auth_csrf", c.CSRFCookieName)
 	assert.Equal("auth", c.DefaultAction)
@@ -50,17 +49,6 @@ func TestConfigParseArgs(t *testing.T) {
 	assert.Equal("cookiename", c.CookieName)
 	assert.Equal("csrfcookiename", c.CSRFCookieName)
 
-	// Check rules
-	assert.Equal(map[string]*Rule{
-		"1": {
-			Action: "allow",
-			Rule:   "PathPrefix(`/one`)",
-		},
-		"two": {
-			Action: "auth",
-			Rule:   "Host(`two.com`) && Path(`/two`)",
-		},
-	}, c.Rules)
 }
 
 func TestConfigParseUnknownFlags(t *testing.T) {
@@ -84,38 +72,13 @@ func TestConfigParseRuleError(t *testing.T) {
 	}
 
 	// Rule without value
-	c, err := NewConfig([]string{
+	_, err = NewConfig([]string{
 		"--rule.one.action=",
 	})
 	if assert.Error(err) {
 		assert.Equal("route param value is required", err.Error())
 	}
-	// Check rules
-	assert.Equal(map[string]*Rule{}, c.Rules)
-}
 
-func TestConfigParseIni(t *testing.T) {
-	assert := assert.New(t)
-	c, err := NewConfig([]string{
-		"--config=../../test/config0",
-		"--config=../../test/config1",
-		"--csrf-cookie-name=csrfcookiename",
-	})
-	require.Nil(t, err)
-
-	assert.Equal("inicookiename", c.CookieName, "should be read from ini file")
-	assert.Equal("csrfcookiename", c.CSRFCookieName, "should be read from ini file")
-	assert.Equal("/two", c.Path, "variable in second ini file should override first ini file")
-	assert.Equal(map[string]*Rule{
-		"1": {
-			Action: "allow",
-			Rule:   "PathPrefix(`/one`)",
-		},
-		"two": {
-			Action: "auth",
-			Rule:   "Host(`two.com`) && Path(`/two`)",
-		},
-	}, c.Rules)
 }
 
 func TestConfigParseEnvironment(t *testing.T) {

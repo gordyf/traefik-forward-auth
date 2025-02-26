@@ -119,7 +119,7 @@ func (a *Authenticator) MakeIDCookie(r *http.Request, email string, token string
 		Path:     "/",
 		Domain:   a.GetCookieDomain(r),
 		HttpOnly: true,
-		Secure:   !a.config.InsecureCookie,
+		Secure:   true,
 		Expires:  expires,
 	}
 
@@ -149,7 +149,7 @@ func (a *Authenticator) MakeCSRFCookie(r *http.Request, nonce string) *http.Cook
 		Path:     "/",
 		Domain:   a.csrfCookieDomain(r),
 		HttpOnly: true,
-		Secure:   !a.config.InsecureCookie,
+		Secure:   true,
 		Expires:  a.config.CookieExpiry(),
 	}
 }
@@ -162,7 +162,7 @@ func (a *Authenticator) ClearCSRFCookie(r *http.Request) *http.Cookie {
 		Path:     "/",
 		Domain:   a.csrfCookieDomain(r),
 		HttpOnly: true,
-		Secure:   !a.config.InsecureCookie,
+		Secure:   true,
 		Expires:  time.Now().Local().Add(time.Hour * -1),
 	}
 }

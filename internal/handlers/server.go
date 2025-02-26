@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	neturl "net/url"
 	"strings"
 
@@ -13,10 +12,8 @@ import (
 
 	"github.com/containous/traefik/pkg/rules"
 	"github.com/coreos/go-oidc"
-	"github.com/mesosphere/traefik-forward-auth/internal/authorization/rbac"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
-	"k8s.io/client-go/kubernetes"
 
 	"github.com/mesosphere/traefik-forward-auth/internal/authorization"
 	internallog "github.com/mesosphere/traefik-forward-auth/internal/log"
@@ -38,7 +35,7 @@ type Server struct {
 }
 
 // NewServer creates a new forwardauth server
-func NewServer(userinfo v1alpha1.UserInfoInterface, clientset kubernetes.Interface, config *configuration.Config) *Server {
+func NewServer(userinfo v1alpha1.UserInfoInterface, config *configuration.Config) *Server {
 	s := &Server{
 		log:           internallog.NewDefaultLogger(config.LogLevel, config.LogFormat),
 		config:        config,
@@ -48,11 +45,7 @@ func NewServer(userinfo v1alpha1.UserInfoInterface, clientset kubernetes.Interfa
 
 	s.buildRoutes()
 	s.userinfo = userinfo
-	if config.EnableRBAC {
-		rbac := rbac.NewAuthorizer(clientset, s.log)
-		rbac.CaseInsensitiveSubjects = config.CaseInsensitiveSubjects
-		s.authorizer = rbac
-	}
+
 	return s
 }
 
@@ -61,19 +54,6 @@ func (s *Server) buildRoutes() {
 	s.router, err = rules.NewRouter()
 	if err != nil {
 		s.log.Fatal(err)
-	}
-
-	// Let's build a router
-	for name, rule := range s.config.Rules {
-		var err error
-		if rule.Action == "allow" {
-			err = s.router.AddRoute(rule.FormattedRule(), 1, s.AllowHandler(name))
-		} else {
-			err = s.router.AddRoute(rule.FormattedRule(), 1, s.AuthHandler(name))
-		}
-		if err != nil {
-			panic(fmt.Sprintf("could not add route: %v", err))
-		}
 	}
 
 	// Add callback handler
@@ -155,13 +135,6 @@ func (s *Server) AuthHandler(rule string) http.HandlerFunc {
 			return
 		}
 
-		// Token forwarding requested now with no token stored in the session, reauth
-		if s.config.ForwardTokenHeaderName != "" && id.Token == "" {
-			logger.Info("re-auth forced because token forwarding enabled and no token stored")
-			s.notAuthenticated(logger, w, r)
-			return
-		}
-
 		// Authorize user
 		groups, err := s.getGroupsFromSession(r)
 		if err != nil {
@@ -176,56 +149,10 @@ func (s *Server) AuthHandler(rule string) http.HandlerFunc {
 			return
 		}
 
-		if s.config.EnableRBAC && !s.authzIsBypassed(r) {
-			kubeUserInfo := s.makeKubeUserInfo(id.Email, groups)
-
-			requestURL := authentication.GetRequestURL(r)
-
-			targetURL, err := url.Parse(requestURL)
-			if err != nil {
-				logger.Errorf("unable to parse target URL %s: %v", requestURL, err)
-				http.Error(w, "Bad Gateway", 502)
-				return
-			}
-
-			logger.Debugf("authorizing user: %s, groups: %s", kubeUserInfo.Name, kubeUserInfo.Groups)
-			authorized, err := s.authorizer.Authorize(kubeUserInfo, r.Method, targetURL)
-			if err != nil {
-				logger.Errorf("error while authorizing %s: %v", kubeUserInfo, err)
-				http.Error(w, "Bad Gateway", 502)
-				return
-			}
-
-			if !authorized {
-				logger.Infof("user %s is not authorized to `%s` in %s", kubeUserInfo.GetName(), r.Method, targetURL)
-				//TODO:k3a: consider some kind of re-auth to recheck for new groups
-				http.Error(w, "Not Authorized", 401)
-				return
-			}
-
-			logger.Infof("user %s is authorized to `%s` in %s", kubeUserInfo.GetName(), r.Method, targetURL)
-		}
-
 		// Valid request
 		logger.Debugf("Allow request from %s", id.Email)
 		for _, headerName := range s.config.EmailHeaderNames {
 			w.Header().Set(headerName, id.Email)
-		}
-
-		if s.config.EnableImpersonation {
-			// Set impersonation headers
-			logger.Debug(fmt.Sprintf("setting authorization token and impersonation headers: email: %s, groups: %s", id.Email, groups))
-			w.Header().Set("Authorization", fmt.Sprintf("Bearer %s", s.config.ServiceAccountToken))
-			w.Header().Set(impersonateUserHeader, id.Email)
-			w.Header().Set(impersonateGroupHeader, "system:authenticated")
-			for _, group := range groups {
-				w.Header().Add(impersonateGroupHeader, fmt.Sprintf("%s%s", s.config.GroupClaimPrefix, group))
-			}
-			w.Header().Set("Connection", cleanupConnectionHeader(w.Header().Get("Connection")))
-		}
-
-		if s.config.ForwardTokenHeaderName != "" && id.Token != "" {
-			w.Header().Add(s.config.ForwardTokenHeaderName, s.config.ForwardTokenPrefix+id.Token)
 		}
 
 		w.WriteHeader(200)
@@ -334,9 +261,6 @@ func (s *Server) AuthCallbackHandler() http.HandlerFunc {
 		email, ok := claims["email"]
 		if ok {
 			token := ""
-			if s.config.ForwardTokenHeaderName != "" {
-				token = rawIDToken
-			}
 
 			// Generate cookies
 			c, err := s.authenticator.MakeIDCookie(r, email.(string), token)
@@ -491,27 +415,4 @@ func (s *Server) getGroupsFromSession(r *http.Request) ([]string, error) {
 		return nil, err
 	}
 	return userInfo.Groups, nil
-}
-
-// authzIsBypassed returns true if the request matches a bypass URI pattern
-func (s *Server) authzIsBypassed(r *http.Request) bool {
-	for _, bypassURIPattern := range s.config.AuthZPassThrough {
-		if authorization.URLMatchesWildcardPattern(r.URL.Path, bypassURIPattern) {
-			s.log.Infof("authorization is disabled for %s", r.URL.Path)
-			return true
-		}
-	}
-	return false
-}
-
-// makeKubeUserInfo appends group prefix to all provided groups and adds "system:authenticated" group to the list
-func (s *Server) makeKubeUserInfo(email string, groups []string) authorization.User {
-	g := []string{"system:authenticated"}
-	for _, group := range groups {
-		g = append(g, fmt.Sprintf("%s%s", s.config.GroupClaimPrefix, group))
-	}
-	return authorization.User{
-		Name:   email,
-		Groups: g,
-	}
 }

@@ -7,16 +7,13 @@ import (
 	"time"
 
 	"github.com/gorilla/sessions"
-	k8s "k8s.io/client-go/kubernetes"
 
 	"github.com/mesosphere/traefik-forward-auth/internal/api/storage/v1alpha1"
 	"github.com/mesosphere/traefik-forward-auth/internal/authentication"
 	"github.com/mesosphere/traefik-forward-auth/internal/configuration"
 	"github.com/mesosphere/traefik-forward-auth/internal/handlers"
-	kubernetes "github.com/mesosphere/traefik-forward-auth/internal/kubernetes"
 	logger "github.com/mesosphere/traefik-forward-auth/internal/log"
 	"github.com/mesosphere/traefik-forward-auth/internal/storage"
-	"github.com/mesosphere/traefik-forward-auth/internal/storage/cluster"
 )
 
 // Main
@@ -40,48 +37,24 @@ func main() {
 	}
 
 	authenticator := authentication.NewAuthenticator(config)
-	// Get clientset for Authorizers
-	var clientset k8s.Interface
-	if config.EnableRBAC || config.EnableInClusterStorage {
-		var err error
-		clientset, err = kubernetes.GetClientSet()
-		if err != nil {
-			log.Fatalf("error getting kubernetes client: %v", err)
-		}
-	}
 
 	var userInfoStore v1alpha1.UserInfoInterface
-	if !config.EnableInClusterStorage {
-		// Prepare cookie session store (first key is for auth, the second one for encryption)
-		hashKey := []byte(config.SecretString)
-		blockKey := []byte(config.EncryptionKeyString)
-		cookieStore := sessions.NewCookieStore(hashKey, blockKey)
-		cookieStore.Options.MaxAge = int(config.Lifetime / time.Second)
-		cookieStore.Options.HttpOnly = true
-		cookieStore.Options.Secure = !config.InsecureCookie
+	// Prepare cookie session store (first key is for auth, the second one for encryption)
+	hashKey := []byte(config.SecretString)
+	blockKey := []byte(config.EncryptionKeyString)
+	cookieStore := sessions.NewCookieStore(hashKey, blockKey)
+	cookieStore.Options.MaxAge = int(config.Lifetime / time.Second)
+	cookieStore.Options.HttpOnly = true
+	cookieStore.Options.Secure = true
 
-		userInfoStore = &storage.GorillaUserInfoStore{
-			SessionStore: cookieStore,
-			SessionName:  config.ClaimsSessionName,
-			Auth:         authenticator,
-		}
-	} else {
-		userInfoStore = cluster.NewClusterStore(
-			clientset,
-			config.ClusterStoreNamespace,
-			config.SecretString,
-			config.Lifetime,
-			time.Duration(config.ClusterStoreCacheTTL)*time.Second,
-			authenticator)
-
-		gc := cluster.NewGC(userInfoStore.(*cluster.ClusterStorage), time.Minute, false, true)
-
-		if err := gc.Start(); err != nil {
-			log.Fatalf("error starting GC process: %v", err)
-		}
+	userInfoStore = &storage.GorillaUserInfoStore{
+		SessionStore: cookieStore,
+		SessionName:  config.ClaimsSessionName,
+		Auth:         authenticator,
 	}
+
 	// Build server
-	server := handlers.NewServer(userInfoStore, clientset, config)
+	server := handlers.NewServer(userInfoStore, config)
 
 	// Attach router to default server
 	http.HandleFunc("/", server.RootHandler)
